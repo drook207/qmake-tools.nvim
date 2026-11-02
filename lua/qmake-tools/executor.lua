@@ -1,4 +1,4 @@
--- Executor: eigenes Fenster mit der Live-Ausgabe von qmake / compiledb / make
+-- Executor: dedicated window with the live output of qmake / compiledb / make
 local config = require("qmake-tools.config")
 
 local M = {}
@@ -26,7 +26,7 @@ local function find_win()
   end
 end
 
---- Datei unter dem Cursor öffnen (gcc/clang: datei:zeile:spalte)
+--- Open the file under the cursor (gcc/clang: file:line:column)
 local function jump()
   local row = vim.api.nvim_win_get_cursor(0)[1]
   local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
@@ -37,7 +37,7 @@ local function jump()
   if not file or file == "" then
     return
   end
-  -- Relativen Pfad über das letzte "Entering directory" darüber auflösen
+  -- Resolve a relative path via the last "Entering directory" above it
   if file:sub(1, 1) ~= "/" then
     local dir
     local lines = vim.api.nvim_buf_get_lines(buf, 0, row, false)
@@ -50,9 +50,9 @@ local function jump()
     file = vim.fs.normalize((dir or vim.uv.cwd()) .. "/" .. file)
   end
   if not vim.uv.fs_stat(file) then
-    return vim.notify("qmake-tools: Datei nicht gefunden: " .. file, vim.log.levels.WARN)
+    return vim.notify("qmake-tools: file not found: " .. file, vim.log.levels.WARN)
   end
-  -- Im vorherigen Fenster öffnen, nicht im Executor
+  -- Open in the previous window, not in the executor
   vim.cmd("wincmd p")
   if vim.api.nvim_get_current_buf() == buf then
     vim.cmd("aboveleft split")
@@ -76,17 +76,18 @@ local function ensure_buf()
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true, desc = desc })
   end
-  map("q", M.close, "Executor schließen")
-  map("<CR>", jump, "Zur Fehlerstelle springen")
+  map("q", M.close, "Close executor")
+  map("<CR>", jump, "Jump to error")
   map("<C-c>", function()
     require("qmake-tools.runner").stop()
-  end, "Vorgang abbrechen")
+  end, "Cancel operation")
   map("]e", function()
-    vim.fn.search("\\v(error|Error|Fehler)", "W")
-  end, "Nächster Fehler")
+    -- "Fehler" also matches localized make/qmake output
+    vim.fn.search("\\v(error|Error|FAILED|Fehler)", "W")
+  end, "Next error")
   map("[e", function()
-    vim.fn.search("\\v(error|Error|Fehler)", "bW")
-  end, "Vorheriger Fehler")
+    vim.fn.search("\\v(error|Error|FAILED|Fehler)", "bW")
+  end, "Previous error")
   return buf
 end
 
@@ -112,7 +113,7 @@ function M.is_open()
   return find_win() ~= nil
 end
 
---- Executor öffnen; focus = true springt hinein
+--- Open the executor; focus = true jumps into it
 function M.open(focus)
   ensure_buf()
   local win = find_win()
@@ -161,13 +162,13 @@ local function highlight(first, lines)
     local group
     if l:match("^>> ") then
       group = "Title"
-    elseif l:match("FEHLGESCHLAGEN") or l:match("[Ee]rror:") or l:match("Error %d")
-      or l:match("[Ee]rror [CLU]%u*%d+") or l:match("%*%*%*") or l:match("beendet mit Code")
-      or l:match("^Konnte nicht starten") then
+    elseif l:match("FAILED") or l:match("[Ee]rror:") or l:match("Error %d")
+      or l:match("[Ee]rror [CLU]%u*%d+") or l:match("%*%*%*") or l:match("exited with code")
+      or l:match("^Could not start") then
       group = "DiagnosticError"
     elseif l:match("[Ww]arning:") or l:match("[Ww]arning [CLU]%u*%d+") or l:match("^WARNING") then
       group = "DiagnosticWarn"
-    elseif l:match("^%[.-%] .*fertig") then
+    elseif l:match("^%[.-%] .*done") then
       group = "DiagnosticOk"
     elseif l:match("[Nn]ote:") or l:match("^%S*make[^:]*: Entering") or l:match("^%S*make[^:]*: Leaving") then
       group = "Comment"
@@ -178,7 +179,7 @@ local function highlight(first, lines)
   end
 end
 
---- Neuen Lauf beginnen: Puffer leeren, ggf. Fenster öffnen
+--- Start a new run: clear the buffer, open the window if needed
 function M.start(title)
   if not opts().enabled then
     return
@@ -194,12 +195,12 @@ function M.start(title)
   end
 end
 
---- Zeilen anhängen (läuft im Hauptthread)
+--- Append lines (runs on the main thread)
 function M.append(lines)
   if not opts().enabled or not valid_buf() or #lines == 0 then
     return
   end
-  -- Nur mitscrollen, wenn der Nutzer am Ende steht (sonst nicht beim Lesen stören)
+  -- Only scroll along if the user is at the end (otherwise don't disturb reading)
   local win = find_win()
   local follow = true
   if win and win == vim.api.nvim_get_current_win() then
@@ -217,7 +218,7 @@ function M.append(lines)
   end
 end
 
---- Lauf beendet
+--- Run finished
 function M.finish(title, ok)
   if not opts().enabled then
     return
@@ -229,7 +230,7 @@ function M.finish(title, ok)
   end
   if ok and o.close_on_success and M.is_open() then
     vim.defer_fn(function()
-      -- Nur schließen, wenn inzwischen nicht schon der nächste Lauf gestartet wurde
+      -- Only close if the next run has not already started in the meantime
       if not require("qmake-tools.runner").is_running() then
         M.close()
       end

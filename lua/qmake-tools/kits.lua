@@ -1,21 +1,21 @@
--- Kits: eine Qt-Version samt Toolchain und Umgebung (wie Kits in Qt Creator)
+-- Kits: a Qt version including toolchain and environment (like kits in Qt Creator)
 --
--- Ein Kit ist eine Tabelle:
---   name        (string)   Anzeigename, eindeutig
---   qmake       (string)   Pfad zu qmake
---   spec        (string?)  mkspec, wird als `-spec <spec>` übergeben
---   env         (table?)   zusätzliche Umgebungsvariablen; ${VAR} wird ersetzt
---   path        (string[]?) Verzeichnisse, die vorne an PATH gehängt werden
---   env_script  (string|string[]?) Skript, das vorher "gesourct" wird (z. B. Yocto-SDK);
---               unter Windows auch .bat/.cmd, als Liste mit Argumenten: { "vcvarsall.bat", "x64" }
---   toolchain   (false?)   Windows: false = Compiler nicht automatisch suchen
---   vcvarsall   (string|false?) Windows/MSVC: Pfad zu vcvarsall.bat (nil = per vswhere suchen,
---               false = nicht laden)
---   msvc_arch   (string?)  Windows/MSVC: Argument für vcvarsall.bat (nil = aus der Qt-Installation)
---   make        (string?)  make-Programm für dieses Kit (nil = passend zur Toolchain)
---   qmake_args  (string[]?) zusätzliche qmake-Argumente für dieses Kit
---   run         (boolean?) false = Programme können nicht lokal gestartet werden
---   run_prefix  (string[]?) wird vor das Programm gesetzt, z. B. { "qemu-arm", "-L", "/sysroot" }
+-- A kit is a table:
+--   name        (string)   display name, unique
+--   qmake       (string)   path to qmake
+--   spec        (string?)  mkspec, passed as `-spec <spec>`
+--   env         (table?)   additional environment variables; ${VAR} is expanded
+--   path        (string[]?) directories prepended to PATH
+--   env_script  (string|string[]?) script that is sourced first (e.g. Yocto SDK);
+--               on Windows also .bat/.cmd, as a list with arguments: { "vcvarsall.bat", "x64" }
+--   toolchain   (false?)   Windows: false = do not search for the compiler automatically
+--   vcvarsall   (string|false?) Windows/MSVC: path to vcvarsall.bat (nil = find via vswhere,
+--               false = do not load)
+--   msvc_arch   (string?)  Windows/MSVC: argument for vcvarsall.bat (nil = from the Qt installation)
+--   make        (string?)  make program for this kit (nil = matching the toolchain)
+--   qmake_args  (string[]?) additional qmake arguments for this kit
+--   run         (boolean?) false = programs cannot be started locally
+--   run_prefix  (string[]?) prepended to the program, e.g. { "qemu-arm", "-L", "/sysroot" }
 local config = require("qmake-tools.config")
 
 local uv = vim.uv or vim.loop
@@ -23,12 +23,12 @@ local M = {}
 
 local is_win = vim.fn.has("win32") == 1
 M.is_win = is_win
--- Trennzeichen in PATH / LD_LIBRARY_PATH
+-- Separator in PATH / LD_LIBRARY_PATH
 M.path_sep = is_win and ";" or ":"
 
 local qmake_names = { "qmake", "qmake-qt5", "qmake6", "qmake-qt6" }
 
--- Übliche Installationsorte außerhalb des PATH
+-- Common installation locations outside PATH
 local unix_globs = {
   "~/Qt/*/gcc_64/bin",
   "~/Qt/*/gcc_arm64/bin",
@@ -50,8 +50,8 @@ local unix_globs = {
   "/usr/local/opt/qt/bin",
 }
 
---- Windows: der Qt-Installer legt standardmäßig <Laufwerk>:\Qt\<Version>\<Compiler> an,
---- ältere/Offline-Installer auch <Laufwerk>:\Qt\<Version>\<Version>\<Compiler>
+--- Windows: the Qt installer creates <drive>:\Qt\<version>\<compiler> by default,
+--- older/offline installers also <drive>:\Qt\<version>\<version>\<compiler>
 local function windows_globs()
   local roots = { "~/Qt" }
   for letter in ("CDEFGHIJKLMNOPQRSTUVWXYZ"):gmatch(".") do
@@ -73,10 +73,10 @@ end
 local kits_file = vim.fn.stdpath("data") .. "/qmake-tools-kits.json"
 
 -- ---------------------------------------------------------------------------
--- Gespeicherte Kits (:QMakeKitAdd)
+-- Stored kits (:QMakeKitAdd)
 -- ---------------------------------------------------------------------------
 
-local registered -- nil = noch nicht geladen
+local registered -- nil = not loaded yet
 
 local function load_registered()
   if registered then
@@ -104,12 +104,12 @@ local function save_registered()
 end
 
 -- ---------------------------------------------------------------------------
--- Pfade und Umgebungsvariablen
+-- Paths and environment variables
 -- ---------------------------------------------------------------------------
 
---- Windows: Umgebungsvariablen sind dort unabhängig von Groß-/Kleinschreibung.
---- Liefert die Schreibweise, unter der die Variable schon existiert (z. B. "Path"),
---- damit vim.system sie ersetzt statt eine zweite Variable anzulegen.
+--- Windows: environment variable names are case-insensitive there.
+--- Returns the spelling under which the variable already exists (e.g. "Path"),
+--- so that vim.system replaces it instead of creating a second variable.
 local env_keys
 function M.env_key(name)
   if not is_win then
@@ -124,24 +124,24 @@ function M.env_key(name)
   return env_keys[name:lower()] or name
 end
 
---- Wert einer Variablen aus env, sonst aus der Umgebung von Neovim
+--- Value of a variable from env, otherwise from Neovim's environment
 function M.getenv(env, name)
   return env[M.env_key(name)] or vim.env[name]
 end
 
---- Pfad in der Schreibweise des Betriebssystems (für PATH und cmd.exe)
+--- Path in the operating system's spelling (for PATH and cmd.exe)
 function M.native(path)
   path = vim.fs.normalize(path)
   return is_win and (path:gsub("/", "\\")) or path
 end
 
---- Absoluter Pfad? (/…, ~…, C:\…, C:/…, \\server\…)
+--- Absolute path? (/…, ~…, C:\…, C:/…, \\server\…)
 function M.is_absolute(path)
   return path:match("^[/~]") ~= nil or (is_win and (path:match("^%a:[/\\]") or path:match("^[/\\][/\\]")) ~= nil)
 end
 
---- Verzeichnisse vorne an eine Pfadliste (PATH, LD_LIBRARY_PATH) hängen
----@param env table wird verändert
+--- Prepend directories to a path list (PATH, LD_LIBRARY_PATH)
+---@param env table is modified
 function M.prepend_path(env, var, dirs)
   if #dirs == 0 then
     return
@@ -157,8 +157,8 @@ end
 
 local script_env_cache = {}
 
---- Variablen, die ein Skript setzt bzw. ändert (z. B. environment-setup-* aus einem
---- Yocto-SDK oder vcvarsall.bat von Visual Studio)
+--- Variables that a script sets or changes (e.g. environment-setup-* from a
+--- Yocto SDK or vcvarsall.bat from Visual Studio)
 ---@param script string
 ---@param args string[]|nil
 local function script_env(script, args)
@@ -169,13 +169,13 @@ local function script_env(script, args)
     return script_env_cache[key]
   end
   if not uv.fs_stat(script) then
-    error("env_script nicht gefunden: " .. script, 0)
+    error("env_script not found: " .. script, 0)
   end
   local res, sep
   if script:lower():match("%.bat$") or script:lower():match("%.cmd$") then
-    -- Über eine temporäre .cmd-Datei, weil cmd.exe die Anführungszeichen von
-    -- libuv-Argumenten nicht versteht (Pfade mit Leerzeichen).
-    -- chcp 65001: `set` gibt UTF-8 aus, sonst werden Umlaute in PATH zerstört.
+    -- Via a temporary .cmd file because cmd.exe does not understand the quoting of
+    -- libuv arguments (paths with spaces).
+    -- chcp 65001: `set` outputs UTF-8, otherwise non-ASCII characters in PATH are corrupted.
     local quoted = vim.tbl_map(function(a)
       return a:find("[%s&|<>^]") and ('"' .. a .. '"') or a
     end, args)
@@ -197,13 +197,13 @@ local function script_env(script, args)
     sep = "%z"
   end
   if res.code ~= 0 then
-    error("env_script fehlgeschlagen: " .. script .. (#args > 0 and (" " .. table.concat(args, " ")) or ""), 0)
+    error("env_script failed: " .. script .. (#args > 0 and (" " .. table.concat(args, " ")) or ""), 0)
   end
   local current = vim.fn.environ()
   local changed = {}
   for entry in (res.stdout .. (sep == "%z" and "\0" or "\n")):gmatch("(.-)" .. sep) do
     local k, v = entry:match("^([^=]+)=(.*)$")
-    -- NVIM: setzt Neovim nur für Kindprozesse, gehört nicht zur Umgebung des Skripts
+    -- NVIM: Neovim sets this only for child processes, not part of the script's environment
     if k and k ~= "_" and k ~= "SHLVL" and k ~= "PWD" and k ~= "OLDPWD" and k ~= "PROMPT" and k ~= "NVIM" then
       k = M.env_key(k)
       if current[k] ~= v then
@@ -223,7 +223,7 @@ local function env_script_of(kit)
   return s, nil
 end
 
---- Umgebung aus env_script, path und env des Kits (ohne automatische Toolchain)
+--- Environment from the kit's env_script, path, and env (without automatic toolchain)
 local function base_env(kit)
   local env = {}
   local script, args = env_script_of(kit)
@@ -255,7 +255,7 @@ local function is_path(exe)
   return exe:find("[/\\]") ~= nil
 end
 
---- Ausführbare Datei samt Endung (.exe unter Windows), sonst nil
+--- Executable file including extension (.exe on Windows), otherwise nil
 local function resolve(path)
   if vim.fn.executable(path) ~= 1 then
     return nil
@@ -293,7 +293,7 @@ end
 
 local query_cache = {}
 
---- Ergebnis von `qmake -query <var>` (zwischengespeichert)
+--- Result of `qmake -query <var>` (cached)
 function M.query(kit, var)
   local qmake = M.qmake(kit)
   if not qmake then
@@ -306,7 +306,7 @@ function M.query(kit, var)
       return vim.system({ qmake, "-query", var }, { text = true, env = base_env(kit) }):wait(10000)
     end)
     local value = (ok and res.code == 0) and vim.trim(res.stdout) or ""
-    -- Pfade unter Windows einheitlich mit /
+    -- Paths on Windows consistently with /
     if is_win and value:match("^%a:[/\\]") then
       value = vim.fs.normalize(value)
     end
@@ -320,16 +320,16 @@ function M.version(kit)
 end
 
 -- ---------------------------------------------------------------------------
--- Toolchain (Windows): Compiler und make passend zur Qt-Version finden
+-- Toolchain (Windows): find the compiler and make matching the Qt version
 -- ---------------------------------------------------------------------------
 --
--- Unter Linux/macOS liegt der Compiler im PATH. Unter Windows muss die Umgebung
--- wie in Qt Creator erst hergestellt werden:
---   MinGW: <Qt-Root>/Tools/mingw810_64/bin (passend zu mingw81_64) in den PATH
---   MSVC:  vcvarsall.bat der Visual-Studio-Installation (per vswhere) laden
--- Außerdem kommt das bin-Verzeichnis von Qt in den PATH (DLLs, moc, uic, …).
+-- On Linux/macOS the compiler is in PATH. On Windows the environment first has to be
+-- set up like in Qt Creator:
+--   MinGW: <Qt-Root>/Tools/mingw810_64/bin (matching mingw81_64) into PATH
+--   MSVC:  load vcvarsall.bat of the Visual Studio installation (via vswhere)
+-- In addition, Qt's bin directory is added to PATH (DLLs, moc, uic, …).
 
---- Art der Toolchain anhand des mkspecs: "msvc" | "mingw" | "gnu"
+--- Toolchain type based on the mkspec: "msvc" | "mingw" | "gnu"
 function M.toolchain_type(kit)
   local spec = kit.spec or M.query(kit, "QMAKE_XSPEC") or ""
   if spec:match("msvc") then
@@ -341,19 +341,19 @@ function M.toolchain_type(kit)
   return "gnu"
 end
 
---- Name der Qt-Installation, z. B. "mingw81_64" aus D:/Qt/5.15.2/mingw81_64
+--- Name of the Qt installation, e.g. "mingw81_64" from D:/Qt/5.15.2/mingw81_64
 local function install_name(kit)
   local prefix = M.query(kit, "QT_INSTALL_PREFIX")
   return prefix and vim.fs.basename(prefix) or ""
 end
 
---- Zerlegt "mingw81_64" / "llvm-mingw1706_64" / "mingw_64" in Name, Version, Bits
+--- Splits "mingw81_64" / "llvm-mingw1706_64" / "mingw_64" into name, version, bits
 local function split_tool_name(name)
   local base, ver, bits = name:lower():match("^(%a[%a%-]-)(%d*)_(%d+)$")
   return base, ver, bits
 end
 
---- Passendes MinGW aus <Qt-Root>/Tools suchen (wie es der Qt-Installer ablegt)
+--- Find a matching MinGW under <Qt-Root>/Tools (as laid out by the Qt installer)
 local function find_mingw(kit)
   local prefix = M.query(kit, "QT_INSTALL_PREFIX")
   if not prefix then
@@ -363,7 +363,7 @@ local function find_mingw(kit)
   if not want_base then
     return nil
   end
-  -- Tools liegt zwei (Qt/5.15.2/mingw81_64) oder drei Ebenen höher (Qt/5.12.12/5.12.12/mingw73_64)
+  -- Tools is two (Qt/5.15.2/mingw81_64) or three levels up (Qt/5.12.12/5.12.12/mingw73_64)
   local best, best_ver
   local dir = prefix
   for _ = 1, 3 do
@@ -375,7 +375,7 @@ local function find_mingw(kit)
         if t == "directory" and base == want_base and bits == want_bits
           and (want_ver == "" or ver:sub(1, #want_ver) == want_ver)
           and uv.fs_stat(tools .. "/" .. name .. "/bin") then
-          -- Bei "mingw_64" (Qt 6) ohne Versionsangabe: neuestes MinGW
+          -- For "mingw_64" (Qt 6) without a version: newest MinGW
           local n = tonumber(ver) or 0
           if not best_ver or n > best_ver then
             best, best_ver = tools .. "/" .. name .. "/bin", n
@@ -390,7 +390,7 @@ local function find_mingw(kit)
   return nil
 end
 
---- vcvarsall.bat der neuesten Visual-Studio-Installation mit C++-Compiler
+--- vcvarsall.bat of the newest Visual Studio installation with a C++ compiler
 local vcvarsall_cache
 local function find_vcvarsall()
   if vcvarsall_cache ~= nil then
@@ -417,7 +417,7 @@ local function find_vcvarsall()
   return vcvarsall_cache or nil
 end
 
---- Argument für vcvarsall.bat aus der Qt-Installation (msvc2019_64 → x64)
+--- Argument for vcvarsall.bat from the Qt installation (msvc2019_64 → x64)
 local function msvc_arch(kit)
   if kit.msvc_arch then
     return kit.msvc_arch
@@ -433,7 +433,7 @@ local function msvc_arch(kit)
   return host_arm and "arm64_x86" or "x86"
 end
 
---- jom (parallel, nmake-kompatibel) aus der Qt-Creator-Installation oder dem PATH
+--- jom (parallel, nmake-compatible) from the Qt Creator installation or PATH
 local function find_jom(kit)
   local found = which_in({}, "jom")
   if found then
@@ -456,7 +456,7 @@ end
 
 local toolchain_cache = {}
 
---- Automatisch ergänzte Umgebung für den Compiler des Kits (nur Windows)
+--- Automatically added environment for the kit's compiler (Windows only)
 ---@return { env: table, make: string|nil, type: string }
 local function toolchain(kit, env)
   local key = kit.name .. "\0" .. tostring(M.qmake(kit))
@@ -471,46 +471,46 @@ local function toolchain(kit, env)
       if not which_in(env, cxx) then
         local bin = find_mingw(kit)
         if not bin then
-          error(("MinGW-Compiler nicht gefunden (%s fehlt im PATH, kein passendes Tools/%s* bei Qt) – "
-            .. "path = { \"…/mingw…/bin\" } im Kit setzen"):format(cxx, install_name(kit):gsub("_%d+$", "")), 0)
+          error(("MinGW compiler not found (%s missing from PATH, no matching Tools/%s* in Qt) – "
+            .. "set path = { \"…/mingw…/bin\" } in the kit"):format(cxx, install_name(kit):gsub("_%d+$", "")), 0)
         end
         table.insert(add_path, bin)
       end
     elseif tc.type == "msvc" and not kit.env_script and kit.vcvarsall ~= false and not which_in(env, "cl") then
       local bat = kit.vcvarsall and vim.fs.normalize(vim.fn.expand(kit.vcvarsall)) or find_vcvarsall()
       if not bat then
-        error("Visual Studio (vcvarsall.bat) nicht gefunden – Visual Studio bzw. die Build Tools mit "
-          .. "C++-Workload installieren oder vcvarsall = \"…/vcvarsall.bat\" im Kit setzen", 0)
+        error("Visual Studio (vcvarsall.bat) not found – install Visual Studio or the Build Tools with the "
+          .. "C++ workload, or set vcvarsall = \"…/vcvarsall.bat\" in the kit", 0)
       end
       local arch = msvc_arch(kit)
       tc.env = vim.deepcopy(script_env(bat, { arch }))
-      -- vcvarsall meldet fehlende Compiler-Komponenten nicht als Fehler und lässt
-      -- dann z. B. den x64-Compiler im PATH – das ergäbe stillschweigend falsche Binaries
+      -- vcvarsall does not report missing compiler components as an error and then
+      -- leaves e.g. the x64 compiler in PATH – that would silently produce wrong binaries
       local target = arch:match("_(%w+)$") or arch
       target = ({ amd64 = "x64", arm64 = "arm64", x86 = "x86", x64 = "x64" })[target] or target
       local cl = which_in(vim.tbl_extend("force", env, tc.env), "cl") or ""
       if not cl:lower():find("/" .. target .. "/cl%.exe$") then
-        error(("MSVC-Compiler für %s nicht installiert (vcvarsall.bat %s) – im Visual Studio Installer "
-          .. "die C++-Buildtools für %s hinzufügen"):format(target, arch, target), 0)
+        error(("MSVC compiler for %s not installed (vcvarsall.bat %s) – in the Visual Studio Installer "
+          .. "add the C++ build tools for %s"):format(target, arch, target), 0)
       end
     end
     if tc.type == "msvc" then
-      -- Englische Compiler-Meldungen, sonst passt das errorformat nicht
+      -- English compiler messages, otherwise the errorformat does not match
       tc.env.VSLANG = "1033"
     end
-    -- Qt-DLLs, moc, uic, … wie in Qt Creator
+    -- Qt DLLs, moc, uic, … as in Qt Creator
     local bins = M.query(kit, "QT_INSTALL_BINS")
     if bins then
       table.insert(add_path, 1, bins)
     end
     if #add_path > 0 then
-      -- PATH von vcvarsall (enthält den ursprünglichen PATH), sonst der des Kits
+      -- PATH from vcvarsall (contains the original PATH), otherwise the kit's
       local key = M.env_key("PATH")
       tc.env[key] = tc.env[key] or env[key]
       M.prepend_path(tc.env, "PATH", add_path)
     end
   end
-  -- make passend zur Toolchain
+  -- make matching the toolchain
   if tc.type == "msvc" then
     tc.make = find_jom(kit) or "nmake"
   elseif tc.type == "mingw" then
@@ -520,21 +520,21 @@ local function toolchain(kit, env)
   return tc
 end
 
---- Vollständige Zusatz-Umgebung eines Kits (nur geänderte Variablen).
---- Wirft einen Fehler, wenn env_script oder die Toolchain nicht geladen werden kann.
+--- Full additional environment of a kit (only changed variables).
+--- Throws an error if env_script or the toolchain cannot be loaded.
 ---@return table<string,string>
 function M.env(kit)
   local env = base_env(kit)
   return vim.tbl_extend("force", env, toolchain(kit, env).env)
 end
 
---- Programm im PATH der Kit-Umgebung auflösen
+--- Resolve a program in the PATH of the kit environment
 function M.which(kit, exe)
   local ok, env = pcall(M.env, kit)
   return which_in(ok and env or base_env(kit), exe)
 end
 
---- make-Programm des Kits: Kit-Option > setup()-Option > passend zur Toolchain
+--- make program of the kit: kit option > setup() option > matching the toolchain
 function M.make(kit)
   if kit.make then
     return kit.make
@@ -558,16 +558,16 @@ function M.make_flavor(make)
 end
 
 -- ---------------------------------------------------------------------------
--- Erkennung
+-- Detection
 -- ---------------------------------------------------------------------------
 
-local detected -- Cache
+local detected -- cache
 
 local function realpath(p)
   return uv.fs_realpath(p) or p
 end
 
---- Beschreibender Name, z. B. "Qt 5.15.2 gcc_64" oder "Qt 5.15.8 (System)"
+--- Descriptive name, e.g. "Qt 5.15.2 gcc_64" or "Qt 5.15.8 (System)"
 local function detected_name(qmake, version)
   local v = version or "?"
   local inst = qmake:match("/Qt/[^/]+/([^/]+)/bin/[^/]+$") or qmake:match("/Qt/.-/([^/]+)/bin/[^/]+$")
@@ -610,8 +610,8 @@ local function shell_lookup()
   return found
 end
 
---- Alle Qt-Installationen auf dem System finden
----@param force boolean|nil neu suchen
+--- Find all Qt installations on the system
+---@param force boolean|nil rescan
 function M.detect(force)
   if detected and not force then
     return detected
@@ -642,7 +642,7 @@ function M.detect(force)
   for _, pattern in ipairs(is_win and windows_globs() or unix_globs) do
     for _, dir in ipairs(vim.fn.glob(vim.fs.normalize(pattern), false, true)) do
       dir = vim.fs.normalize(dir)
-      -- Android/WebAssembly sind Cross-Kits und brauchen eigene Einstellungen
+      -- Android/WebAssembly are cross kits and need their own settings
       if not dir:match("/android_[^/]*/bin$") and not dir:match("/wasm_[^/]*/bin$") then
         for _, exe in ipairs(qmake_names) do
           add(dir .. "/" .. exe)
@@ -654,7 +654,7 @@ function M.detect(force)
     vim.list_extend(candidates, shell_lookup())
   end
 
-  -- Pro Verzeichnis nur ein qmake (Qt 6 liefert qmake und qmake6)
+  -- Only one qmake per directory (Qt 6 provides qmake and qmake6)
   local seen, dirs, names = {}, {}, {}
   for _, qmake in ipairs(candidates) do
     local real = realpath(qmake)
@@ -662,7 +662,7 @@ function M.detect(force)
     if not seen[real] and not dirs[dir] then
       seen[real], dirs[dir] = true, true
       local kit = { qmake = qmake, detected = true }
-      -- ARM64-Qt auf einem x64-Rechner (oder umgekehrt) ist ein Cross-Kit
+      -- ARM64 Qt on an x64 machine (or vice versa) is a cross kit
       local host_arm = (is_win and (vim.env.PROCESSOR_ARCHITECTURE or ""):upper() == "ARM64")
         or (not is_win and (uv.os_uname().machine:match("^aarch64") or uv.os_uname().machine:match("^arm64")) ~= nil)
       if dir:match("_arm64/bin$") and not host_arm then
@@ -679,7 +679,7 @@ function M.detect(force)
       table.insert(detected, kit)
     end
   end
-  -- Neueste Version zuerst
+  -- Newest version first
   local function vkey(k)
     return (M.version(k) or "0"):gsub("%d+", function(n)
       return ("%05d"):format(tonumber(n))
@@ -692,11 +692,11 @@ function M.detect(force)
 end
 
 -- ---------------------------------------------------------------------------
--- Gesamtliste
+-- Full list
 -- ---------------------------------------------------------------------------
 
---- Alle Kits: aus setup() > gespeichert (:QMakeKitAdd) > automatisch erkannt.
---- Gleichnamige Kits aus einer höheren Quelle ersetzen die anderen.
+--- All kits: from setup() > stored (:QMakeKitAdd) > automatically detected.
+--- Kits with the same name from a higher-priority source replace the others.
 function M.all()
   local list, by_name = {}, {}
   local function add(kit, source)
@@ -708,22 +708,22 @@ function M.all()
     by_name[kit.name] = kit
     table.insert(list, kit)
   end
-  -- Kompatibilität: alte Option qmake_executable wird zum Kit "Standard"
+  -- Compatibility: the old qmake_executable option becomes the kit "Standard"
   if config.options.qmake_executable then
     add({ name = "Standard", qmake = vim.fn.expand(config.options.qmake_executable) }, "setup")
   end
   for name, kit in pairs(config.options.kits or {}) do
-    -- erlaubt sowohl Liste als auch { ["Name"] = { ... } }
+    -- allows both a list and { ["Name"] = { ... } }
     if type(name) == "string" and not kit.name then
       kit = vim.tbl_extend("force", { name = name }, kit)
     end
     add(kit, "setup")
   end
   for _, kit in ipairs(load_registered()) do
-    add(kit, "registriert")
+    add(kit, "registered")
   end
   for _, kit in ipairs(M.detect()) do
-    add(kit, "erkannt")
+    add(kit, "detected")
   end
   return list
 end
@@ -739,7 +739,7 @@ function M.get(name)
   end
 end
 
---- Standard-Kit: Option default_kit, sonst das erste lokale (Nicht-Cross-)Kit
+--- Default kit: default_kit option, otherwise the first local (non-cross) kit
 function M.default()
   local all = M.all()
   local chosen = M.get(config.options.default_kit)
@@ -754,7 +754,7 @@ function M.default()
   return all[1]
 end
 
---- Kit registrieren (wird in stdpath("data") gespeichert)
+--- Register a kit (stored in stdpath("data"))
 function M.register(kit)
   load_registered()
   for i, k in ipairs(registered) do
@@ -780,13 +780,13 @@ function M.unregister(name)
   return false
 end
 
---- Kurzer, dateisystemtauglicher Name für Build-Verzeichnisse
+--- Short, filesystem-safe name for build directories
 function M.slug(name)
   local s = (name or "kit"):lower():gsub("[^%w%._]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
   return s
 end
 
---- Compiler des Kits (für Anzeige und Prüfung)
+--- Compiler of the kit (for display and checks)
 function M.compiler(kit)
   local t = M.toolchain_type(kit)
   if t == "msvc" then
@@ -795,14 +795,14 @@ function M.compiler(kit)
   return (kit.spec or M.query(kit, "QMAKE_XSPEC") or ""):match("clang") and "clang++" or "g++"
 end
 
---- Probleme eines Kits (leere Liste = in Ordnung)
+--- Problems of a kit (empty list = all good)
 function M.check(kit)
   local problems = {}
   if not M.qmake(kit) then
-    table.insert(problems, "qmake nicht gefunden: " .. tostring(kit.qmake))
+    table.insert(problems, "qmake not found: " .. tostring(kit.qmake))
     return problems
   elseif not M.version(kit) then
-    table.insert(problems, "`qmake -query` schlägt fehl")
+    table.insert(problems, "`qmake -query` fails")
     return problems
   end
   local ok, e = pcall(M.env, kit)
@@ -812,10 +812,10 @@ function M.check(kit)
   end
   local cc = M.compiler(kit)
   if kit.run ~= false and not kit.spec and not M.which(kit, cc) then
-    table.insert(problems, "Compiler nicht gefunden: " .. cc)
+    table.insert(problems, "compiler not found: " .. cc)
   end
   if not M.which(kit, M.make(kit)) then
-    table.insert(problems, "make nicht gefunden: " .. M.make(kit))
+    table.insert(problems, "make not found: " .. M.make(kit))
   end
   return problems
 end

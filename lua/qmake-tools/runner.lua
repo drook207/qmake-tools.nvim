@@ -3,7 +3,7 @@ local executor = require("qmake-tools.executor")
 
 local M = {}
 
-local current -- laufender vim.system-Prozess
+local current -- currently running vim.system process
 local qf_title = "qmake-tools"
 
 function M.is_running()
@@ -13,18 +13,18 @@ end
 function M.stop()
   if current then
     if vim.fn.has("win32") == 1 and current.pid then
-      -- Ganzen Prozessbaum beenden, sonst laufen die Compiler von make/jom weiter
+      -- Kill the whole process tree, otherwise the compilers spawned by make/jom keep running
       vim.system({ "taskkill", "/T", "/F", "/PID", tostring(current.pid) }):wait(5000)
     else
       current:kill(15)
     end
-    vim.notify("qmake-tools: abgebrochen", vim.log.levels.WARN)
+    vim.notify("qmake-tools: canceled", vim.log.levels.WARN)
   end
 end
 
--- Eingebautes errorformat: Verzeichniswechsel von make/mingw32-make (-w), gcc/clang,
--- MSVC (cl) und qmake. Ohne die Plattform-Voreinstellungen von 'errorformat', die
--- unter Windows weder gcc-Meldungen mit Verzeichnissen noch mingw32-make kennen.
+-- Built-in errorformat: directory changes from make/mingw32-make (-w), gcc/clang,
+-- MSVC (cl), and qmake. Without the platform defaults of 'errorformat', which
+-- on Windows know neither gcc messages with directories nor mingw32-make.
 local builtin_efm = table.concat({
   [[%D%*[^ ]: Entering directory %*[`']%f']],
   [[%X%*[^ ]: Leaving directory %*[`']%f']],
@@ -62,13 +62,13 @@ local function qf_append(lines)
     return
   end
   executor.append(lines)
-  -- Nur in unsere eigene Liste schreiben, falls inzwischen eine andere aktiv ist
+  -- Only write to our own list if a different one isn't active in the meantime
   local info = vim.fn.getqflist({ title = 0, id = 0 })
   if info.title ~= qf_title then
     return
   end
   vim.fn.setqflist({}, "a", { id = info.id, lines = lines, efm = errorformat() })
-  -- Quickfix-Fenster mitscrollen
+  -- Scroll the quickfix window along
   for _, win in ipairs(vim.api.nvim_list_wins()) do
     local buf = vim.api.nvim_win_get_buf(win)
     if vim.bo[buf].buftype == "quickfix" and vim.fn.getwininfo(win)[1].loclist == 0 then
@@ -129,13 +129,13 @@ end
 ---@field cwd string
 ---@field label string
 
---- Führt Schritte nacheinander aus und streamt die Ausgabe in die Quickfix-Liste.
+--- Runs steps one after another and streams the output into the quickfix list.
 ---@param steps QMakeStep[]
 ---@param title string
 ---@param on_done fun(ok: boolean)|nil
 function M.run(steps, title, on_done)
   if current then
-    vim.notify("qmake-tools: es läuft bereits ein Vorgang (:QMakeStop)", vim.log.levels.WARN)
+    vim.notify("qmake-tools: an operation is already running (:QMakeStop)", vim.log.levels.WARN)
     return
   end
   vim.fn.setqflist({}, " ", { title = qf_title, lines = {} })
@@ -149,14 +149,14 @@ function M.run(steps, title, on_done)
   local function finish(ok)
     current = nil
     local secs = (vim.uv.hrtime() - started) / 1e9
-    qf_append({ "", string.format("[%s] %s nach %.1fs", title, ok and "fertig" or "FEHLGESCHLAGEN", secs) })
+    qf_append({ "", string.format("[%s] %s after %.1fs", title, ok and "done" or "FAILED", secs) })
     executor.finish(title, ok)
     local mode = config.options.open_quickfix
     if mode == "always" or (mode == "on_error" and (not ok or has_errors())) then
       open_qf()
     end
     vim.notify(
-      string.format("qmake-tools: %s %s", title, ok and "erfolgreich" or "fehlgeschlagen"),
+      string.format("qmake-tools: %s %s", title, ok and "succeeded" or "failed"),
       ok and vim.log.levels.INFO or vim.log.levels.ERROR
     )
     vim.api.nvim_exec_autocmds("User", { pattern = "QMakeToolsDone", data = { title = title, ok = ok } })
@@ -172,7 +172,7 @@ function M.run(steps, title, on_done)
       return finish(true)
     end
     vim.fn.mkdir(step.cwd, "p")
-    -- Lua-Schritt (z. B. eingebauter compile_commands-Generator): fn() -> ok, lines
+    -- Lua step (e.g. built-in compile_commands generator): fn() -> ok, lines
     if step.fn then
       qf_append({ ">> " .. step.label })
       local okc, ok, lines = pcall(step.fn)
@@ -186,15 +186,15 @@ function M.run(steps, title, on_done)
       return finish(false)
     end
     qf_append({ string.format(">> %s: %s", step.label, table.concat(step.cmd, " ")) })
-    -- quiet: Ausgabe sammeln und nur bei Fehler zeigen (für compiledb, dessen
-    -- `make -n`-Testlauf harmlose "No rule to make target"-Meldungen erzeugt)
+    -- quiet: collect output and only show it on an error (for compiledb, whose
+    -- `make -n` test run produces harmless "No rule to make target" messages)
     local collected = {}
     local sink = step.quiet and function(lines)
       vim.list_extend(collected, lines)
     end or qf_append
     local ok, proc = pcall(vim.system, step.cmd, {
       cwd = step.cwd,
-      -- Englische Meldungen von make/gcc, damit das errorformat greift
+      -- English messages from make/gcc so the errorformat matches
       env = vim.tbl_extend("force", step.env or {}, { LC_MESSAGES = "C", LANGUAGE = "" }),
       text = true,
       stdout = line_buffer(sink),
@@ -211,13 +211,13 @@ function M.run(steps, title, on_done)
           next_step()
         else
           qf_append(collected)
-          qf_append({ string.format("%s beendet mit Code %d", step.cmd[1], res.code) })
+          qf_append({ string.format("%s exited with code %d", step.cmd[1], res.code) })
           finish(false)
         end
       end)
     end)
     if not ok then
-      qf_append({ "Konnte nicht starten: " .. tostring(proc) })
+      qf_append({ "Could not start: " .. tostring(proc) })
       return finish(false)
     end
     current = proc

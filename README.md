@@ -1,140 +1,216 @@
 # qmake-tools.nvim
 
-qmake-Projekte in Neovim bauen, starten und mit clangd (LSP) nutzen – angelehnt an
+Build, run, and use qmake projects in Neovim with clangd (LSP) – modeled after
 [cmake-tools.nvim](https://github.com/Civitasv/cmake-tools.nvim).
 
-- `:QMakeGenerate` führt qmake aus und erzeugt eine `compile_commands.json`
-  (per `compiledb` oder eingebautem Generator)
-- die Datei wird ins Projekt-Root verlinkt und clangd automatisch neu gestartet
-- Build-Ausgabe läuft asynchron in die Quickfix-Liste (Fehler direkt anspringbar mit `:cn`/`:cp`)
-- Debug/Release-Builds in getrennten Verzeichnissen, umschaltbar
-- `:QMakeRun` baut und startet das Programm in einem Terminal-Split
-- funktioniert auch mit `TEMPLATE = subdirs` (mehrere Programme → Auswahl)
-- Speichern einer `.pro`/`.pri` aktualisiert die Datenbank automatisch
-- Linux, macOS und Windows (MinGW, LLVM-MinGW, MSVC) – siehe [Windows](#windows)
+- `:QMakeGenerate` runs qmake and creates a `compile_commands.json`
+  (via `compiledb` or the built-in generator)
+- the file is linked into the project root and clangd is restarted automatically
+- build output runs asynchronously into the quickfix list (errors can be jumped to directly with `:cn`/`:cp`)
+- Debug/Release builds in separate directories, switchable
+- `:QMakeRun` builds and starts the program in a terminal split
+- also works with `TEMPLATE = subdirs` (multiple programs → selection)
+- saving a `.pro`/`.pri` updates the database automatically
+- Linux, macOS, and Windows (MinGW, LLVM-MinGW, MSVC) – see [Windows](#windows)
 
-## Voraussetzungen
+## Requirements
 
 - Neovim ≥ 0.10
-- `qmake` / `qmake6`, `make` (unter Windows: siehe [Windows](#windows))
-- optional `compiledb` (`pip install compiledb`) oder `bear` – ohne beide liest der
-  eingebaute Generator die Makefiles direkt
-- `clangd` als Language Server
+- `qmake` / `qmake6`, `make` (on Windows: see [Windows](#windows))
+- optionally `compiledb` (`pip install compiledb`) or `bear` – without either, the
+  built-in generator reads the Makefiles directly
+- `clangd` as the language server
 
-Prüfen mit `:checkhealth qmake-tools`.
+Check with `:checkhealth qmake-tools`.
 
-### Wie qmake gefunden wird
+### How qmake is found
 
-Jede Konfiguration nutzt das qmake ihres Kits. Automatisch erkannt werden:
-`$QMAKE`, `qmake`/`qmake-qt5`/`qmake6` im PATH, `~/Qt/<version>/gcc_64/bin` (Online-Installer),
-`/opt/Qt/...`, `/usr/lib/qt5/bin`, `/usr/lib/qt6/bin`, Homebrew u. a. Wird nichts davon
-gefunden, wird die Shell-Konfiguration (`.bashrc`, `.zshrc`, `.profile`) nach Aliasen und
-PATH-Einträgen befragt. Unter Windows: `<Laufwerk>:\Qt\…` auf allen Laufwerken, siehe
-[Windows](#windows). Alles Weitere unter [Kits](#kits).
+Each configuration uses the qmake of its kit. Automatically detected are:
+`$QMAKE`, `qmake`/`qmake-qt5`/`qmake6` in PATH, `~/Qt/<version>/gcc_64/bin` (online installer),
+`/opt/Qt/...`, `/usr/lib/qt5/bin`, `/usr/lib/qt6/bin`, Homebrew, and others. If none of these
+is found, the shell configuration (`.bashrc`, `.zshrc`, `.profile`) is queried for aliases and
+PATH entries. On Windows: `<drive>:\Qt\…` on all drives, see
+[Windows](#windows). Everything else under [Kits](#kits).
 
 ## Installation
 
 **lazy.nvim**
 
 ```lua
-{
-  dir = "~/pfad/zu/qmake-tools.nvim",   -- bzw. "user/qmake-tools.nvim" nach Upload auf GitHub
-  ft = { "cpp", "c", "qmake" },
-  cmd = { "QMakeGenerate", "QMakeBuild", "QMakeRun", "QMakeSelectBuildType" },
-  opts = {},
+return {
+  {
+    "drook207/qmake-tools.nvim",
+    -- local checkout instead: dir = "~/Projects/qmake-tools.nvim",
+    name = "qmake-tools.nvim",
+    lazy = true,
+    ft = { "c", "cpp", "qmake" },
+    cmd = {
+      "QMakeGenerate", "QMakeBuild", "QMakeRun", "QMakeClean", "QMakeRebuild",
+      "QMakeStop", "QMakeOpenExecutor", "QMakeCloseExecutor", "QMakeToggleExecutor",
+      "QMakeInfo", "QMakeArgs", "QMakeArgsAdd", "QMakeRunArgs",
+      "QMakeSelectBuildType", "QMakeSelectTarget", "QMakeSelectProject",
+      "QMakeSelectConfig", "QMakeConfigNew", "QMakeConfigRename", "QMakeConfigDelete",
+      "QMakeSelectKit", "QMakeKits", "QMakeKitAdd", "QMakeKitRemove",
+    },
+    opts = {},
+    keys = {
+      -- core workflow
+      { "<leader>Qg", "<cmd>QMakeGenerate<cr>", desc = "Generate" },
+      { "<leader>Qb", "<cmd>QMakeBuild<cr>", desc = "Build" },
+      { "<leader>QB", "<cmd>QMakeRebuild<cr>", desc = "Clean + Build" },
+      { "<leader>Qr", "<cmd>QMakeRun<cr>", desc = "Run target" },
+      { "<leader>Qc", "<cmd>QMakeClean<cr>", desc = "Clean" },
+      { "<leader>Ql", "<cmd>QMakeRunArgs<cr>", desc = "Set launch args" },
+
+      -- qmake arguments
+      { "<leader>Qae", "<cmd>QMakeArgs<cr>", desc = "Edit qmake args" },
+      { "<leader>Qaa", ":QMakeArgsAdd ", desc = "Add qmake arg" },
+      { "<leader>Qax", "<cmd>QMakeArgs!<cr>", desc = "Clear qmake args" },
+
+      -- selection menus
+      { "<leader>Qst", "<cmd>QMakeSelectBuildType<cr>", desc = "Select build type" },
+      { "<leader>Qsl", "<cmd>QMakeSelectTarget<cr>", desc = "Select launch target" },
+      { "<leader>Qsp", "<cmd>QMakeSelectProject<cr>", desc = "Select .pro file" },
+      { "<leader>Qsk", "<cmd>QMakeSelectKit<cr>", desc = "Select kit" },
+      { "<leader>Qsc", "<cmd>QMakeSelectConfig<cr>", desc = "Select config" },
+
+      -- configurations
+      { "<leader>QCn", "<cmd>QMakeConfigNew<cr>", desc = "New config" },
+      { "<leader>QCs", "<cmd>QMakeSelectConfig<cr>", desc = "Select config" },
+      { "<leader>QCr", "<cmd>QMakeConfigRename<cr>", desc = "Rename config" },
+      { "<leader>QCd", "<cmd>QMakeConfigDelete<cr>", desc = "Delete config" },
+
+      -- kits
+      { "<leader>QKl", "<cmd>QMakeKits<cr>", desc = "List kits" },
+      { "<leader>QKs", "<cmd>QMakeKits!<cr>", desc = "Rescan kits" },
+      { "<leader>QKa", "<cmd>QMakeKitAdd<cr>", desc = "Add kit" },
+      { "<leader>QKr", "<cmd>QMakeKitRemove<cr>", desc = "Remove kit" },
+
+      -- build type directly
+      { "<leader>Qtd", "<cmd>QMakeSelectBuildType Debug<cr>", desc = "Debug" },
+      { "<leader>Qtr", "<cmd>QMakeSelectBuildType Release<cr>", desc = "Release" },
+
+      -- window / process
+      { "<leader>Qe", "<cmd>QMakeToggleExecutor<cr>", desc = "Toggle executor" },
+      { "<leader>Qoe", "<cmd>QMakeOpenExecutor<cr>", desc = "Open executor" },
+      { "<leader>Qoq", "<cmd>botright copen<cr>", desc = "Open quickfix" },
+      { "<leader>Qxe", "<cmd>QMakeCloseExecutor<cr>", desc = "Close executor" },
+      { "<leader>Qxq", "<cmd>cclose<cr>", desc = "Close quickfix" },
+      { "<leader>QX", "<cmd>QMakeStop<cr>", desc = "Stop build" },
+
+      -- misc
+      { "<leader>Qi", "<cmd>QMakeInfo<cr>", desc = "Info" },
+      { "<leader>QS", "<cmd>checkhealth qmake-tools<cr>", desc = "Health check" },
+    },
+  },
+  {
+    "folke/which-key.nvim",
+    opts = {
+      spec = {
+        { "<leader>Q", group = "QMake", icon = "󰙲" },
+        { "<leader>Qa", group = "qmake args" },
+        { "<leader>Qs", group = "select" },
+        { "<leader>Qt", group = "build type" },
+        { "<leader>Qo", group = "open" },
+        { "<leader>Qx", group = "close" },
+        { "<leader>QC", group = "configs" },
+        { "<leader>QK", group = "kits" },
+      },
+    },
+  },
 }
 ```
 
-**Ohne Plugin-Manager**: Ordner nach
-`~/.local/share/nvim/site/pack/plugins/start/qmake-tools.nvim` kopieren.
+**Without a plugin manager**: copy the folder to
+`~/.local/share/nvim/site/pack/plugins/start/qmake-tools.nvim`.
 
-## Kits und Konfigurationen
+## Kits and configurations
 
-Wie in Qt Creator gibt es zwei Ebenen:
+As in Qt Creator, there are two levels:
 
-- **Kit** = eine Qt-Version samt Toolchain und Umgebung (z. B. „Qt 5.12 Desktop“,
-  „Qt 5.15 Raspberry Pi“). Kits gelten global für alle Projekte.
-- **Konfiguration** = pro Projekt eine benannte Kombination aus Kit, Build-Typ,
-  qmake-Argumenten und Startargumenten. Jede hat ein eigenes Build-Verzeichnis,
-  ein Wechsel ist daher sofort möglich, ohne neu zu bauen.
+- **Kit** = a Qt version including toolchain and environment (e.g. "Qt 5.12 Desktop",
+  "Qt 5.15 Raspberry Pi"). Kits are global for all projects.
+- **Configuration** = per project, a named combination of kit, build type,
+  qmake arguments, and run arguments. Each has its own build directory,
+  so switching is immediate without rebuilding.
 
 ### Kits
 
-Installierte Qt-Versionen werden automatisch erkannt (`~/Qt/<version>/…`,
-`/usr/lib/qt5/bin`, PATH, …). Eigene Kits kommen in `setup()`:
+Installed Qt versions are detected automatically (`~/Qt/<version>/…`,
+`/usr/lib/qt5/bin`, PATH, …). Custom kits go in `setup()`:
 
 ```lua
 opts = {
-  default_kit = "Qt 5.15 Desktop",     -- für neue Konfigurationen
+  default_kit = "Qt 5.15 Desktop",     -- for new configurations
   kits = {
     { name = "Qt 5.15 Desktop", qmake = "~/Qt/5.15.2/gcc_64/bin/qmake" },
     { name = "Qt 5.12 Desktop", qmake = "~/Qt/5.12.12/gcc_64/bin/qmake" },
 
-    -- Cross-Compile mit eigener Qt-Installation und Toolchain im PATH
+    -- Cross-compile with a custom Qt installation and toolchain in PATH
     { name = "Raspberry Pi 4",
       qmake = "/opt/qt5pi/bin/qmake",
-      spec = "devices/linux-rasp-pi4-v3d-g++",          -- optional, sonst Standard-spec der Qt-Installation
-      path = { "/opt/cross-pi-gcc/bin" },               -- vorne an PATH
+      spec = "devices/linux-rasp-pi4-v3d-g++",          -- optional, otherwise the default spec of the Qt installation
+      path = { "/opt/cross-pi-gcc/bin" },               -- prepend to PATH
       env = { PKG_CONFIG_SYSROOT_DIR = "/opt/rpi-sysroot" },
-      run = false },                                     -- nicht lokal starten
+      run = false },                                     -- do not run locally
 
-    -- Yocto/Boot2Qt-SDK: Umgebungsskript wird vorher geladen
+    -- Yocto/Boot2Qt SDK: environment script is sourced first
     { name = "Yocto aarch64",
-      qmake = "qmake",                                   -- wird im PATH des Skripts gesucht
+      qmake = "qmake",                                   -- looked up in the script's PATH
       env_script = "/opt/poky/4.0/environment-setup-cortexa72-poky-linux",
       run_prefix = { "qemu-aarch64", "-L", "/opt/poky/4.0/sysroots/cortexa72-poky-linux" } },
   },
 }
 ```
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
-| `name` | Anzeigename (Pflicht) |
-| `qmake` | Pfad zu qmake oder Name im PATH des Kits (Pflicht) |
-| `spec` | mkspec, wird als `-spec` übergeben |
-| `path` | Verzeichnisse, die vorne an `PATH` gehängt werden |
-| `env` | zusätzliche Variablen, `${VAR}` wird ersetzt |
-| `env_script` | Shell-Skript, das vorher geladen wird (Yocto, Boot2Qt, …); unter Windows auch `.bat`/`.cmd`, mit Argumenten als Liste |
-| `make` | anderes make-Programm (Standard: passend zur Toolchain) |
-| `toolchain` | Windows: `false` = Compiler nicht automatisch suchen |
-| `vcvarsall` | Windows/MSVC: Pfad zu `vcvarsall.bat` (Standard: per vswhere), `false` = nicht laden |
-| `msvc_arch` | Windows/MSVC: Argument für `vcvarsall.bat` (Standard: aus der Qt-Installation, z. B. `x64`) |
-| `qmake_args` | zusätzliche qmake-Argumente nur für dieses Kit |
-| `run` | `false` = `:QMakeRun` ist gesperrt |
-| `run_prefix` | wird beim Starten vorangestellt, z. B. qemu oder ein ssh-Skript |
+| `name` | Display name (required) |
+| `qmake` | Path to qmake or name in the kit's PATH (required) |
+| `spec` | mkspec, passed as `-spec` |
+| `path` | Directories prepended to `PATH` |
+| `env` | additional variables, `${VAR}` is expanded |
+| `env_script` | shell script sourced first (Yocto, Boot2Qt, …); on Windows also `.bat`/`.cmd`, with arguments as a list |
+| `make` | different make program (default: matching the toolchain) |
+| `toolchain` | Windows: `false` = do not search for the compiler automatically |
+| `vcvarsall` | Windows/MSVC: path to `vcvarsall.bat` (default: via vswhere), `false` = do not load |
+| `msvc_arch` | Windows/MSVC: argument for `vcvarsall.bat` (default: from the Qt installation, e.g. `x64`) |
+| `qmake_args` | additional qmake arguments for this kit only |
+| `run` | `false` = `:QMakeRun` is disabled |
+| `run_prefix` | prepended when running, e.g. qemu or an ssh script |
 
-Kits lassen sich auch ohne Konfigurationsdatei registrieren; sie werden dann in
-`stdpath("data")/qmake-tools-kits.json` gespeichert:
+Kits can also be registered without a configuration file; they are then stored in
+`stdpath("data")/qmake-tools-kits.json`:
 
 ```vim
 :QMakeKitAdd "Qt 5.9 Legacy" /opt/Qt5.9.9/5.9.9/gcc_64/bin/qmake
-:QMakeKitAdd                       " fragt Pfad und Name ab
-:QMakeKits                         " alle Kits mit Version, Quelle und Problemen
-:QMakeKits!                        " Installationen neu suchen
+:QMakeKitAdd                       " prompts for path and name
+:QMakeKits                         " all kits with version, source, and problems
+:QMakeKits!                        " rescan installations
 ```
 
-### Konfigurationen
+### Configurations
 
 ```vim
-:QMakeConfigNew pi                 " Kopie der aktiven Konfiguration, danach Kit wählen
-:QMakeSelectKit Raspberry Pi 4     " Kit der aktiven Konfiguration ändern
-:QMakeSelectConfig                 " zwischen Konfigurationen wechseln
+:QMakeConfigNew pi                 " copy of the active configuration, then choose kit
+:QMakeSelectKit Raspberry Pi 4     " change the kit of the active configuration
+:QMakeSelectConfig                 " switch between configurations
 :QMakeConfigRename / :QMakeConfigDelete
 ```
 
-Build-Typ, qmake-Argumente und Startargumente gehören jeweils zur aktiven
-Konfiguration. Beim Wechsel wird die passende `compile_commands.json` verlinkt
-und clangd neu gestartet. Neu generiert wird nur, wenn es für die Konfiguration
-noch keine gibt.
+Build type, qmake arguments, and run arguments each belong to the active
+configuration. When switching, the matching `compile_commands.json` is linked
+and clangd is restarted. Regeneration only happens if none exists for the
+configuration yet.
 
-Das Build-Verzeichnis ist standardmäßig `build/<konfiguration>/<kit>-<buildtyp>`,
-z. B. `build/pi/raspberry-pi-4-release`. Anpassbar über `build_dir` mit den Platzhaltern
-`${config}`, `${kit}`, `${build_type}` und `${build_type_lower}`.
+The build directory defaults to `build/<configuration>/<kit>-<build-type>`,
+e.g. `build/pi/raspberry-pi-4-release`. Customizable via `build_dir` with the placeholders
+`${config}`, `${kit}`, `${build_type}`, and `${build_type_lower}`.
 
-### Cross-Compiling und clangd
+### Cross-compiling and clangd
 
-`compile_commands.json` enthält den vollen Pfad zum Cross-Compiler. Damit clangd
-dessen System-Header und Sysroot findet, muss es den Compiler abfragen dürfen:
+`compile_commands.json` contains the full path to the cross compiler. For clangd
+to find its system headers and sysroot, it must be allowed to query the compiler:
 
 ```lua
 vim.lsp.config("clangd", {
@@ -142,32 +218,32 @@ vim.lsp.config("clangd", {
 })
 ```
 
-Ohne `--query-driver` meldet clangd bei Cross-Konfigurationen fehlende Standard-Header.
+Without `--query-driver`, clangd reports missing standard headers for cross configurations.
 
 ## Windows
 
-Unter Windows stellt das Plugin die Build-Umgebung so her wie Qt Creator – ohne
-„Developer Command Prompt“ und ohne Compiler im PATH:
+On Windows, the plugin sets up the build environment like Qt Creator – without a
+"Developer Command Prompt" and without the compiler in PATH:
 
-- **Qt-Installationen** werden auf allen Laufwerken gefunden: `C:\Qt`, `D:\Qt`, …
-  (`<Version>\mingw*`, `<Version>\llvm-mingw*`, `<Version>\msvc*`, auch verschachtelte
-  Offline-Installationen wie `D:\Qt\5.12.12\5.12.12\mingw73_64`). Android- und
-  WebAssembly-Builds werden übersprungen, ARM64-Qt auf x64-Rechnern als Cross-Kit markiert.
-- **MinGW / LLVM-MinGW**: der passende Compiler aus `<Qt-Root>\Tools` kommt in den PATH
+- **Qt installations** are found on all drives: `C:\Qt`, `D:\Qt`, …
+  (`<Version>\mingw*`, `<Version>\llvm-mingw*`, `<Version>\msvc*`, including nested
+  offline installations such as `D:\Qt\5.12.12\5.12.12\mingw73_64`). Android and
+  WebAssembly builds are skipped, ARM64 Qt on x64 machines is marked as a cross kit.
+- **MinGW / LLVM-MinGW**: the matching compiler from `<Qt-Root>\Tools` is added to PATH
   (`mingw81_64` → `Tools\mingw810_64`, `mingw73_64` → `Tools\mingw730_64`, Qt 6
-  `mingw_64` → neuestes `Tools\mingw*_64`). make ist `mingw32-make`.
-- **MSVC**: `vcvarsall.bat` der neuesten Visual-Studio-Installation (per `vswhere`) wird
-  mit der Architektur der Qt-Installation geladen (`msvc2019_64` → `x64`). Gebaut wird mit
-  `jom` aus Qt Creator (parallel), sonst `nmake`. qmake bekommt `-FC`, damit Fehler mit
-  vollständigem Pfad in der Quickfix-Liste landen. Das Laden dauert einige Sekunden und
-  passiert einmal pro Sitzung und Architektur.
-- Das `bin`-Verzeichnis der Qt-Version steht beim Bauen und Starten im PATH. Zur Laufzeit
-  kommen die Verzeichnisse der im Projekt gebauten DLLs dazu (statt `LD_LIBRARY_PATH`).
-- Wie in Qt Creator erzeugt qmake `Makefile.Debug`/`Makefile.Release`; Programme liegen
-  in `debug\` bzw. `release\` und werden dort gefunden.
-- `compile_commands.json` erzeugt der eingebaute Generator (compiledb versteht nur
-  GNU make, `bear` gibt es nicht für Windows). Bei MinGW enthält sie den vollen
-  Compilerpfad; clangd braucht dann `--query-driver`:
+  `mingw_64` → newest `Tools\mingw*_64`). make is `mingw32-make`.
+- **MSVC**: `vcvarsall.bat` from the newest Visual Studio installation (via `vswhere`) is
+  loaded with the architecture of the Qt installation (`msvc2019_64` → `x64`). Building uses
+  `jom` from Qt Creator (parallel), otherwise `nmake`. qmake gets `-FC` so errors with
+  full paths end up in the quickfix list. Loading takes a few seconds and
+  happens once per session and architecture.
+- The `bin` directory of the Qt version is in PATH when building and running. At runtime,
+  the directories of DLLs built in the project are added (instead of `LD_LIBRARY_PATH`).
+- As in Qt Creator, qmake creates `Makefile.Debug`/`Makefile.Release`; programs are located
+  in `debug\` and `release\` respectively and found there.
+- `compile_commands.json` is created by the built-in generator (compiledb only understands
+  GNU make, `bear` is not available for Windows). With MinGW it contains the full
+  compiler path; clangd then needs `--query-driver`:
 
 ```lua
 vim.lsp.config("clangd", {
@@ -175,131 +251,131 @@ vim.lsp.config("clangd", {
 })
 ```
 
-Ein Kit lässt sich wie gewohnt manuell anlegen – die Toolchain wird trotzdem
-automatisch ergänzt. Abweichungen gezielt einstellen:
+A kit can still be created manually as usual – the toolchain is added
+automatically anyway. To customize deviations:
 
 ```lua
 kits = {
-  -- MinGW außerhalb der Qt-Installation
+  -- MinGW outside the Qt installation
   { name = "Qt 5.15 MinGW", qmake = "D:/Qt/5.15.2/mingw81_64/bin/qmake.exe", path = { "C:/mingw64/bin" } },
-  -- bestimmte Visual-Studio-Version
+  -- specific Visual Studio version
   { name = "Qt 5.15 MSVC", qmake = "D:/Qt/5.15.2/msvc2019_64/bin/qmake.exe",
     vcvarsall = "C:/Program Files/Microsoft Visual Studio/2019/Professional/VC/Auxiliary/Build/vcvarsall.bat" },
 }
 ```
 
-`:checkhealth qmake-tools` zeigt pro Kit, welcher Compiler und welches make
-verwendet werden, `:QMakeInfo` dasselbe für die aktive Konfiguration.
+`:checkhealth qmake-tools` shows per kit which compiler and which make
+are used, `:QMakeInfo` the same for the active configuration.
 
-## Befehle
+## Commands
 
-| Befehl | Funktion |
+| Command | Function |
 |---|---|
-| `:QMakeGenerate` | qmake ausführen, `compile_commands.json` erzeugen und verlinken |
-| `:QMakeBuild [target]` | bauen (generiert vorher automatisch, falls nötig) |
-| `:QMakeRun` | bauen und Programm im Terminal starten |
-| `:QMakeArgs [args]` | zusätzliche qmake-Argumente für dieses Projekt setzen; ohne Argumente bearbeiten; `:QMakeArgs!` löscht |
-| `:QMakeArgsAdd args` | qmake-Argumente anhängen |
-| `:QMakeRunArgs [args]` | Startargumente setzen; ohne Argumente bearbeiten; `:QMakeRunArgs!` löscht |
-| `:QMakeSelectBuildType [Debug\|Release]` | Build-Typ wechseln |
-| `:QMakeSelectTarget` | Programm wählen (bei mehreren ausführbaren Dateien) |
-| `:QMakeSelectProject` | `.pro`-Datei wählen (bei mehreren im Root) |
-| `:QMakeSelectConfig [name]` | Konfiguration wechseln |
-| `:QMakeConfigNew [name]` / `:QMakeConfigRename [name]` / `:QMakeConfigDelete [name]` | Konfigurationen verwalten |
-| `:QMakeSelectKit [name]` | Kit der aktiven Konfiguration wählen |
-| `:QMakeKits[!]` | Kits anzeigen (`!` = neu suchen) |
-| `:QMakeKitAdd ["Name" qmake [spec]]` / `:QMakeKitRemove [name]` | Kits registrieren / entfernen |
+| `:QMakeGenerate` | run qmake, generate and link `compile_commands.json` |
+| `:QMakeBuild [target]` | build (generates automatically first if needed) |
+| `:QMakeRun` | build and run the program in a terminal |
+| `:QMakeArgs [args]` | set additional qmake arguments for this project; without arguments: edit; `:QMakeArgs!` clears |
+| `:QMakeArgsAdd args` | append qmake arguments |
+| `:QMakeRunArgs [args]` | set run arguments; without arguments: edit; `:QMakeRunArgs!` clears |
+| `:QMakeSelectBuildType [Debug\|Release]` | switch build type |
+| `:QMakeSelectTarget` | choose program (when there are multiple executables) |
+| `:QMakeSelectProject` | choose `.pro` file (when there are multiple in the root) |
+| `:QMakeSelectConfig [name]` | switch configuration |
+| `:QMakeConfigNew [name]` / `:QMakeConfigRename [name]` / `:QMakeConfigDelete [name]` | manage configurations |
+| `:QMakeSelectKit [name]` | choose kit of the active configuration |
+| `:QMakeKits[!]` | show kits (`!` = rescan) |
+| `:QMakeKitAdd ["Name" qmake [spec]]` / `:QMakeKitRemove [name]` | register / remove kits |
 | `:QMakeClean` / `:QMakeRebuild` | `make clean` / clean + build |
-| `:QMakeStop` | laufenden Vorgang abbrechen |
-| `:QMakeOpenExecutor[!]` | Ausgabefenster öffnen und hineinspringen (`!` = Fokus behalten) |
-| `:QMakeCloseExecutor` / `:QMakeToggleExecutor` | Ausgabefenster schließen / umschalten |
-| `:QMakeInfo` | aktuelle Einstellungen anzeigen |
+| `:QMakeStop` | cancel the running operation |
+| `:QMakeOpenExecutor[!]` | open the output window and jump into it (`!` = keep focus) |
+| `:QMakeCloseExecutor` / `:QMakeToggleExecutor` | close / toggle the output window |
+| `:QMakeInfo` | show current settings |
 
-`.pro`-Datei, Konfigurationen und aktive Konfiguration werden pro Projekt gespeichert
-(`stdpath("data")/qmake-tools.json`). Zustände älterer Versionen werden automatisch
-in eine Konfiguration `default` übernommen.
+`.pro` file, configurations, and active configuration are stored per project
+(`stdpath("data")/qmake-tools.json`). State from older versions is migrated automatically
+into a configuration `default`.
 
-### qmake-Argumente pro Projekt
+### qmake arguments per project
 
 ```vim
-:QMakeArgs DEFINES+=MEIN_FLAG CONFIG+=c++20     " setzen (ersetzt vorhandene)
-:QMakeArgsAdd CONFIG+=sanitizer                 " anhängen
-:QMakeArgs                                      " aktuelle Argumente im Eingabefeld bearbeiten
-:QMakeArgs!                                     " alle löschen
-:QMakeArgs -spec linux-clang                    " <Tab> nach -spec listet die mkspecs
+:QMakeArgs DEFINES+=MY_FLAG CONFIG+=c++20       " set (replaces existing)
+:QMakeArgsAdd CONFIG+=sanitizer                 " append
+:QMakeArgs                                      " edit current arguments in the input field
+:QMakeArgs!                                     " clear all
+:QMakeArgs -spec linux-clang                    " <Tab> after -spec lists the mkspecs
 ```
 
-- Argumente werden wie in der Shell getrennt: `"..."` oder `'...'` fassen Leerzeichen zusammen.
-- Sie gelten für die aktive Konfiguration (alle Build-Typen) und kommen im qmake-Aufruf
-  nach `qmake_args`, den `qmake_args` des Kits und `build_type_args`, haben also Vorrang.
-- Nach jeder Änderung wird automatisch neu generiert (sofern schon ein Build existiert),
-  damit clangd die neuen Flags bekommt.
-- Den kompletten qmake-Aufruf zeigt `:QMakeInfo`.
-- `<Tab>` vervollständigt gängige Einträge wie `CONFIG+=c++20` oder `QMAKE_CXXFLAGS+=`.
+- Arguments are split like in the shell: `"..."` or `'...'` group spaces.
+- They apply to the active configuration (all build types) and are placed in the qmake invocation
+  after `qmake_args`, the kit's `qmake_args`, and `build_type_args`, so they take precedence.
+- After every change, the database is regenerated automatically (if a build already exists),
+  so clangd gets the new flags.
+- `:QMakeInfo` shows the complete qmake invocation.
+- `<Tab>` completes common entries such as `CONFIG+=c++20` or `QMAKE_CXXFLAGS+=`.
 
-## Executor (Ausgabefenster)
+## Executor (output window)
 
-qmake, compiledb und make schreiben ihre Ausgabe live in ein eigenes Fenster,
-wie der Executor von cmake-tools. Fehler, Warnungen und Abschnitte sind farbig
-hervorgehoben, die Statuszeile zeigt den Zustand (⟳ läuft, ✓ fertig, ✗ Fehler).
+qmake, compiledb, and make write their output live into a dedicated window,
+like the executor of cmake-tools. Errors, warnings, and sections are color-highlighted,
+the status line shows the state (⟳ running, ✓ done, ✗ error).
 
-Im Fenster:
+In the window:
 
-| Taste | Funktion |
+| Key | Function |
 |---|---|
-| `<CR>` | zur Fehlerstelle unter dem Cursor springen |
-| `]e` / `[e` | nächster / vorheriger Fehler |
-| `<C-c>` | laufenden Vorgang abbrechen |
-| `q` | Fenster schließen |
+| `<CR>` | jump to the error location under the cursor |
+| `]e` / `[e` | next / previous error |
+| `<C-c>` | cancel the running operation |
+| `q` | close the window |
 
-Das Fenster scrollt mit, solange der Cursor am Ende steht. Scrollst du hoch, um
-etwas zu lesen, bleibt die Ansicht stehen. Die Quickfix-Liste wird zusätzlich
-immer gefüllt, `:cnext` und `:cprev` funktionieren also weiterhin.
+The window scrolls along as long as the cursor is at the end. If you scroll up to
+read something, the view stays put. The quickfix list is always filled as well,
+so `:cnext` and `:cprev` keep working.
 
-Die Testlauf-Ausgabe von `compiledb` (`make -n`) wird nur bei einem Fehler
-gezeigt, sonst erscheint eine Zusammenfassung wie `compile_commands.json: 12 Dateien`.
+The test-run output of `compiledb` (`make -n`) is only shown on an error;
+otherwise a summary such as `compile_commands.json: 12 files` appears.
 
-## Konfiguration (Standardwerte)
+## Configuration (defaults)
 
 ```lua
 require("qmake-tools").setup({
-  kits = {},                       -- siehe Abschnitt Kits
-  default_kit = nil,               -- nil = erstes lokales Kit
-  detect_kits = true,              -- installierte Qt-Versionen automatisch anbieten
-  make_executable = nil,           -- nil = passend zur Toolchain (make, mingw32-make, jom, nmake)
-  default_config = "default",      -- Name der ersten Konfiguration
+  kits = {},                       -- see Kits section
+  default_kit = nil,               -- nil = first local kit
+  detect_kits = true,              -- automatically offer installed Qt versions
+  make_executable = nil,           -- nil = matching the toolchain (make, mingw32-make, jom, nmake)
+  default_config = "default",      -- name of the first configuration
   build_dir = "build/${config}/${kit}-${build_type_lower}",
   build_types = { "Debug", "Release" },
   default_build_type = "Debug",
-  qmake_args = {},                 -- z. B. { "-spec", "linux-clang" }
+  qmake_args = {},                 -- e.g. { "-spec", "linux-clang" }
   build_type_args = {
     Debug = { "CONFIG+=debug", "CONFIG+=qml_debug" },
     Release = { "CONFIG+=release" },
   },
-  jobs = nil,                      -- nil = Anzahl CPU-Kerne
+  jobs = nil,                      -- nil = number of CPU cores
   compile_commands = "auto",       -- "auto" | "compiledb" | "builtin" | "bear" | false
   link_compile_commands = true,
   restart_clangd = true,
   regenerate_on_save = true,
   build_before_run = true,
-  add_library_search_paths = true, -- Build-Libs + Qt-Libs in LD_LIBRARY_PATH bzw. PATH (wie Qt Creator)
+  add_library_search_paths = true, -- build libs + Qt libs in LD_LIBRARY_PATH or PATH (like Qt Creator)
   executor = {
     enabled = true,
     open = "always",               -- "always" | "on_error" | "never"
     position = "bottom",           -- "bottom" | "top" | "right" | "left"
-    size = 15,                     -- Höhe bzw. Breite
-    focus = false,                 -- beim Öffnen hineinspringen
+    size = 15,                     -- height or width
+    focus = false,                 -- jump into it when opening
     wrap = false,
-    close_on_success = false,      -- nach Erfolg automatisch schließen
+    close_on_success = false,      -- close automatically after success
     close_on_success_delay = 1500, -- ms
   },
   open_quickfix = "never",         -- "always" | "on_error" | "never"
-  errorformat = nil,               -- nil = eingebaut (gcc/clang, MSVC, qmake, make -w)
+  errorformat = nil,               -- nil = built-in (gcc/clang, MSVC, qmake, make -w)
   terminal_height = 15,
 })
 ```
 
-Weitere Build-Typen sind einfach hinzuzufügen:
+More build types are easy to add:
 
 ```lua
 opts = {
@@ -308,7 +384,7 @@ opts = {
 }
 ```
 
-## Tastenbelegung (Beispiel)
+## Keymaps (example)
 
 ```lua
 vim.keymap.set("n", "<leader>qg", "<cmd>QMakeGenerate<cr>", { desc = "qmake generate" })
@@ -317,7 +393,7 @@ vim.keymap.set("n", "<leader>qr", "<cmd>QMakeRun<cr>",      { desc = "qmake run"
 vim.keymap.set("n", "<leader>qt", "<cmd>QMakeSelectBuildType<cr>", { desc = "qmake build type" })
 ```
 
-## Statuszeile (lualine)
+## Statusline (lualine)
 
 ```lua
 lualine_x = {
@@ -326,28 +402,28 @@ lualine_x = {
 }
 ```
 
-## clangd einrichten
+## Setting up clangd
 
 ```lua
 -- Neovim 0.11+
 vim.lsp.enable("clangd")
 ```
 
-clangd findet die verlinkte `compile_commands.json` im Projekt-Root. Ohne
-`.git`-Verzeichnis im Projekt sollte die Datei vor dem ersten Öffnen einer
-Quelldatei einmal mit `:QMakeGenerate` erzeugt werden, damit clangd das Root erkennt.
-`compile_commands.json` gehört in die `.gitignore`.
+clangd finds the linked `compile_commands.json` in the project root. Without a
+`.git` directory in the project, the file should be generated once with `:QMakeGenerate`
+before opening a source file for the first time, so clangd recognizes the root.
+`compile_commands.json` belongs in `.gitignore`.
 
-## Hinweise
+## Notes
 
-- qmake läuft mit `-r`, damit bei `subdirs`-Projekten alle Unter-Makefiles sofort
-  existieren und `compiledb` ohne vorherigen Build alle Quelldateien findet.
-- Von moc erzeugte Dateien (`moc_*.cpp`) erscheinen erst nach dem ersten Build in der
-  Datenbank. Das betrifft nur diese generierten Dateien, nicht deine Quellen.
-- Mit `compile_commands = "bear"` wird die Datenbank beim echten Build aufgezeichnet
-  statt bei `:QMakeGenerate`.
-- `compile_commands = "auto"` nimmt `compiledb`, wenn es installiert ist und das Kit
-  GNU make nutzt, sonst den eingebauten Generator (`"builtin"`). Der liest CC/CXX,
-  Flags, DEFINES, INCPATH und SOURCES aus den von qmake erzeugten Makefiles.
-- Das Ende jedes Vorgangs löst `User QMakeToolsDone` aus (`data = { title, ok }`),
-  z. B. für eigene Benachrichtigungen.
+- qmake runs with `-r` so that with `subdirs` projects all sub-Makefiles exist
+  immediately and `compiledb` finds all source files without a prior build.
+- Files generated by moc (`moc_*.cpp`) only appear in the database after the first build.
+  This only affects these generated files, not your sources.
+- With `compile_commands = "bear"`, the database is recorded during the actual build
+  instead of at `:QMakeGenerate`.
+- `compile_commands = "auto"` uses `compiledb` if it is installed and the kit
+  uses GNU make, otherwise the built-in generator (`"builtin"`). The latter reads CC/CXX,
+  flags, DEFINES, INCPATH, and SOURCES from the Makefiles generated by qmake.
+- The end of every operation triggers `User QMakeToolsDone` (`data = { title, ok }`),
+  e.g. for custom notifications.

@@ -11,42 +11,42 @@ function M.check()
   if vim.fn.has("nvim-0.10") == 1 then
     h.ok("Neovim >= 0.10")
   else
-    h.error("Neovim >= 0.10 benötigt")
+    h.error("Neovim >= 0.10 required")
   end
 
   local cc = config.compile_commands
   if cc == "compiledb" or cc == "bear" then
     if cc == "bear" and vim.fn.has("win32") == 1 then
-      h.error("bear gibt es nicht für Windows", { 'compile_commands = "auto" oder "builtin"' })
+      h.error("bear is not available for Windows", { 'compile_commands = "auto" or "builtin"' })
     elseif vim.fn.executable(cc) == 1 then
       h.ok(cc .. ": " .. vim.fn.exepath(cc))
     else
-      h.error(cc .. " nicht gefunden", { cc == "compiledb" and "pip install compiledb" or "bear installieren" })
+      h.error(cc .. " not found", { cc == "compiledb" and "pip install compiledb" or "install bear" })
     end
   elseif cc == "auto" then
     if vim.fn.executable("compiledb") == 1 then
-      h.ok("compile_commands: compiledb (" .. vim.fn.exepath("compiledb") .. ") für GNU make, sonst eingebaut")
+      h.ok("compile_commands: compiledb (" .. vim.fn.exepath("compiledb") .. ") for GNU make, builtin otherwise")
     else
-      h.ok("compile_commands: eingebauter Generator (compiledb nicht installiert)")
+      h.ok("compile_commands: builtin generator (compiledb not installed)")
     end
   elseif cc == "builtin" then
-    h.ok("compile_commands: eingebauter Generator")
+    h.ok("compile_commands: builtin generator")
   else
-    h.info("compile_commands.json-Erzeugung deaktiviert")
+    h.info("compile_commands.json generation disabled")
   end
 
   if vim.fn.executable("clangd") == 1 then
-    h.ok("clangd gefunden")
+    h.ok("clangd found")
   else
-    h.warn("clangd nicht im PATH (wird für LSP benötigt)")
+    h.warn("clangd not in PATH (required for LSP)")
   end
 
   h.start("qmake-tools: Kits")
   local all = kits.all()
   if #all == 0 then
-    h.error("kein Kit gefunden", {
-      ":QMakeKitAdd \"Name\" /pfad/zu/qmake",
-      "oder in setup(): kits = { { name = \"Qt 5.15\", qmake = \"/pfad/zu/qmake\" } }",
+    h.error("no kit found", {
+      ':QMakeKitAdd "Name" /path/to/qmake',
+      'or in setup(): kits = { { name = "Qt 5.15", qmake = "/path/to/qmake" } }',
     })
   end
   local cross = false
@@ -65,23 +65,23 @@ function M.check()
     end
   end
   if cross then
-    h.info("Für Cross-Kits sollte clangd mit --query-driver gestartet werden, damit es die "
-      .. "System-Header der Toolchain findet (siehe README, Abschnitt Cross-Compiling).")
+    h.info("For cross kits, clangd should be started with --query-driver so it can find the "
+      .. "toolchain's system headers (see README, section Cross-compiling).")
   end
 
   local p = project.get(true)
   if p then
-    h.start("qmake-tools: Projekt")
+    h.start("qmake-tools: Project")
     local c = project.config(p)
-    h.info("Root: " .. p.root .. " (" .. (p.pro and vim.fs.basename(p.pro) or "keine .pro gewählt") .. ")")
+    h.info("Root: " .. p.root .. " (" .. (p.pro and vim.fs.basename(p.pro) or "no .pro selected") .. ")")
     for _, cc2 in ipairs(p.configs) do
       local kit = kits.get(cc2.kit)
       local line = ("%s %s: %s · %s → %s"):format(cc2.name == c.name and "●" or "○", cc2.name,
-        cc2.kit or "kein Kit", cc2.build_type, project.build_dir(p, cc2))
+        cc2.kit or "no kit", cc2.build_type, project.build_dir(p, cc2))
       if kit then
         h.ok(line)
       else
-        h.warn(line .. " (Kit fehlt)", { ":QMakeSelectKit" })
+        h.warn(line .. " (kit missing)", { ":QMakeSelectKit" })
       end
     end
   end
